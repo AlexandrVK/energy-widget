@@ -10,7 +10,9 @@ import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.os.Bundle
 import android.widget.RemoteViews
+import androidx.work.Constraints
 import androidx.work.ExistingPeriodicWorkPolicy
+import androidx.work.NetworkType
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.Worker
 import androidx.work.WorkManager
@@ -69,10 +71,13 @@ fun badgesFor(day: Day?, nowMs: Long, s: Settings): List<String> {
     }
 }
 
-// Текст предупреждения, если последняя попытка загрузки не удалась
+// Предупреждение: сайт не ответил при живой сети, либо данные сильно устарели
+// (например, телефон долго был без сети). Короткое отсутствие сети не тревожит.
 fun warningText(ctx: Context): String? {
-    if (!connectionFailed(ctx)) return null
     val at = fetchedAt(ctx)
+    val staleMs = loadSettings(ctx).intervalMin * 3 * 60_000L
+    val stale = at != 0L && System.currentTimeMillis() - at > staleMs
+    if (!connectionFailed(ctx) && !stale) return null
     return if (at == 0L) {
         "Нет связи с сайтом · данных нет"
     } else {
@@ -119,7 +124,9 @@ private fun pendingRefresh(ctx: Context): PendingIntent =
 
 fun schedule(ctx: Context) {
     val minutes = loadSettings(ctx).intervalMin.toLong().coerceAtLeast(15)
-    val req = PeriodicWorkRequestBuilder<RefreshWorker>(minutes, TimeUnit.MINUTES).build()
+    val req = PeriodicWorkRequestBuilder<RefreshWorker>(minutes, TimeUnit.MINUTES)
+        .setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build())
+        .build()
     WorkManager.getInstance(ctx).enqueueUniquePeriodicWork(
         WORK_NAME, ExistingPeriodicWorkPolicy.UPDATE, req
     )
@@ -127,8 +134,8 @@ fun schedule(ctx: Context) {
 
 class RefreshWorker(ctx: Context, params: WorkerParameters) : Worker(ctx, params) {
     override fun doWork(): Result {
-        refreshSchedule(applicationContext)
+        val ok = refreshSchedule(applicationContext)
         updateAll(applicationContext)
-        return Result.success()
+        return if (ok) Result.success() else Result.retry()
     }
 }

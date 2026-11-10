@@ -1,6 +1,13 @@
 package com.example.energy
 
 import android.content.Context
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
+import androidx.work.Constraints
+import androidx.work.ExistingWorkPolicy
+import androidx.work.NetworkType
+import androidx.work.OneTimeWorkRequestBuilder
+import androidx.work.WorkManager
 import org.json.JSONArray
 import java.net.HttpURLConnection
 import java.net.URL
@@ -74,9 +81,32 @@ fun fetchQueues(type: Int): List<Queue> {
         .map { Queue(it.getInt("id"), it.getString("name")) }
 }
 
+// Есть ли сейчас рабочий выход в интернет (сеть подключена и проверена системой)
+fun isOnline(ctx: Context): Boolean {
+    val cm = ctx.getSystemService(ConnectivityManager::class.java) ?: return false
+    val net = cm.activeNetwork ?: return false
+    val caps = cm.getNetworkCapabilities(net) ?: return false
+    return caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
+        caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
+}
+
+// Разовое обновление, которое система запустит сама, как только появится сеть
+fun refreshWhenOnline(ctx: Context) {
+    val req = OneTimeWorkRequestBuilder<RefreshWorker>()
+        .setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build())
+        .build()
+    WorkManager.getInstance(ctx)
+        .enqueueUniqueWork("energy_catchup", ExistingWorkPolicy.KEEP, req)
+}
+
 // Несколько попыток подряд. Возвращает true, если данные получены.
-// При успехе сохраняет время и сбрасывает флаг сбоя. При неудаче ставит флаг.
+// Нет сети — не считается сбоем сайта: флаг не ставим, а обновление откладываем до появления сети.
+// При успехе сохраняет время и сбрасывает флаг сбоя. При неудаче (сеть есть, сайт не ответил) ставит флаг.
 fun refreshSchedule(ctx: Context, attempts: Int = 3): Boolean {
+    if (!isOnline(ctx)) {
+        refreshWhenOnline(ctx)
+        return false
+    }
     repeat(attempts) { attempt ->
         try {
             val json = httpGet(API_SCHEDULE)
