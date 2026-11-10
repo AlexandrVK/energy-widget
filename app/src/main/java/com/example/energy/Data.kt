@@ -81,13 +81,13 @@ fun fetchQueues(type: Int): List<Queue> {
         .map { Queue(it.getInt("id"), it.getString("name")) }
 }
 
-// Есть ли сейчас рабочий выход в интернет (сеть подключена и проверена системой)
+// Есть ли сейчас сеть с выходом в интернет.
+// VALIDATED не требуем: часть сетей никогда не проходит проверку системы,
+// и тогда приложение не делало бы ни одного запроса. Если сети нет, запрос сам упадёт.
 fun isOnline(ctx: Context): Boolean {
     val cm = ctx.getSystemService(ConnectivityManager::class.java) ?: return false
-    val net = cm.activeNetwork ?: return false
-    val caps = cm.getNetworkCapabilities(net) ?: return false
-    return caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
-        caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
+    val caps = cm.getNetworkCapabilities(cm.activeNetwork ?: return false) ?: return false
+    return caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
 }
 
 // Разовое обновление, которое система запустит сама, как только появится сеть
