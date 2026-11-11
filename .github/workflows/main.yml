@@ -40,6 +40,6 @@ jobs:
         run: |
           gh release delete latest --cleanup-tag -y || true
           gh release create latest energy-widget.apk \
-            --title "Latest build" \
+            --title "build ${{ github.run_number }}" \
             --notes "Автосборка из коммита ${{ github.sha }}" \
             --target ${{ github.sha }}
