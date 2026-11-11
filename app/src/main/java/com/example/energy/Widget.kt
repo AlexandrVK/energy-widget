@@ -10,9 +10,7 @@ import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.os.Bundle
 import android.widget.RemoteViews
-import androidx.work.Constraints
 import androidx.work.ExistingPeriodicWorkPolicy
-import androidx.work.NetworkType
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.Worker
 import androidx.work.WorkManager
@@ -71,19 +69,22 @@ fun badgesFor(day: Day?, nowMs: Long, s: Settings): List<String> {
     }
 }
 
-// Предупреждение: сайт не ответил при живой сети, либо данные сильно устарели
-// (например, телефон долго был без сети). Короткое отсутствие сети не тревожит.
+// Текст предупреждения, если последняя попытка загрузки не удалась
 fun warningText(ctx: Context): String? {
+    if (!connectionFailed(ctx)) return null
     val at = fetchedAt(ctx)
-    val staleMs = loadSettings(ctx).intervalMin * 3 * 60_000L
-    val stale = at != 0L && System.currentTimeMillis() - at > staleMs
-    if (!connectionFailed(ctx) && !stale) return null
     return if (at == 0L) {
         "Нет связи с сайтом · данных нет"
     } else {
         val time = SimpleDateFormat("HH:mm").format(Date(at))
         "Нет связи · данные на $time, могут быть неактуальны"
     }
+}
+
+// Время последней успешной загрузки для верхней строки виджета
+fun updatedText(ctx: Context): String {
+    val at = fetchedAt(ctx)
+    return if (at == 0L) "--:--" else SimpleDateFormat("HH:mm").format(Date(at))
 }
 
 fun renderWidget(ctx: Context, mgr: AppWidgetManager, id: Int) {
@@ -106,6 +107,7 @@ fun renderWidget(ctx: Context, mgr: AppWidgetManager, id: Int) {
 
     val views = RemoteViews(ctx.packageName, R.layout.widget_energy)
     views.setImageViewBitmap(R.id.dial, bmp)
+    views.setTextViewText(R.id.updated, updatedText(ctx))
     views.setOnClickPendingIntent(R.id.dial, pendingActivity(ctx, MainActivity::class.java, 10))
     views.setOnClickPendingIntent(R.id.gear, pendingActivity(ctx, SettingsActivity::class.java, 11))
     views.setOnClickPendingIntent(R.id.refresh, pendingRefresh(ctx))
@@ -124,18 +126,17 @@ private fun pendingRefresh(ctx: Context): PendingIntent =
 
 fun schedule(ctx: Context) {
     val minutes = loadSettings(ctx).intervalMin.toLong().coerceAtLeast(15)
-    val req = PeriodicWorkRequestBuilder<RefreshWorker>(minutes, TimeUnit.MINUTES)
-        .setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build())
-        .build()
+    val req = PeriodicWorkRequestBuilder<RefreshWorker>(minutes, TimeUnit.MINUTES).build()
     WorkManager.getInstance(ctx).enqueueUniquePeriodicWork(
         WORK_NAME, ExistingPeriodicWorkPolicy.UPDATE, req
     )
+    scheduleUpdateCheck(ctx)
 }
 
 class RefreshWorker(ctx: Context, params: WorkerParameters) : Worker(ctx, params) {
     override fun doWork(): Result {
-        val ok = refreshSchedule(applicationContext)
+        refreshSchedule(applicationContext)
         updateAll(applicationContext)
-        return if (ok) Result.success() else Result.retry()
+        return Result.success()
     }
 }

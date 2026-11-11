@@ -15,7 +15,7 @@ import android.widget.TextView
 import kotlin.math.atan2
 import kotlin.math.sqrt
 
-// Полноэкранный циферблат: тап по зоне показывает время и статус
+// Полноэкранный циферблат: тап по зоне показывает отрезок того же статуса
 class DialView(ctx: Context) : View(ctx) {
     var day: Day? = null
     var gpvId = -1
@@ -106,24 +106,33 @@ class MainActivity : Activity() {
         }.start()
     }
 
+    // Показывает весь непрерывный отрезок того же статуса, в который попал тап
     private fun showSlot(i: Int) {
         val day = dial.day ?: return
         val s = loadSettings(this)
-        val from = "%02d:%02d".format(i / 2, (i % 2) * 30)
-        val next = i + 1
-        val to = "%02d:%02d".format((next / 2) % 24, (next % 2) * 30)
-        val status = when {
-            s.gpvId < 0 -> "группа не выбрана"
-            else -> when (day.statusAt(s.gpvId, i)) {
-                PowerStatus.POWER_ON -> "свет есть"
-                PowerStatus.POSSIBLE -> "возможно отключение"
-                PowerStatus.OUTAGE -> "отключение"
-            }
+        if (s.gpvId < 0) {
+            AlertDialog.Builder(this)
+                .setMessage("Группа не выбрана")
+                .setPositiveButton("OK", null)
+                .show()
+            return
+        }
+        val status = day.statusAt(s.gpvId, i)
+        var first = i
+        while (first > 0 && day.statusAt(s.gpvId, first - 1) == status) first--
+        var last = i
+        while (last < SLOTS - 1 && day.statusAt(s.gpvId, last + 1) == status) last++
+        val text = when (status) {
+            PowerStatus.POWER_ON -> "свет есть"
+            PowerStatus.POSSIBLE -> "возможно отключение"
+            PowerStatus.OUTAGE -> "отключение"
         }
         AlertDialog.Builder(this)
-            .setTitle("$from – $to")
-            .setMessage("ГПВ ${s.gpvId}: $status")
+            .setTitle("${slotTime(first)} – ${slotTime(last + 1)}")
+            .setMessage("ГПВ ${s.gpvId}: $text")
             .setPositiveButton("OK", null)
             .show()
     }
+
+    private fun slotTime(slot: Int) = "%02d:%02d".format((slot / 2) % 24, (slot % 2) * 30)
 }

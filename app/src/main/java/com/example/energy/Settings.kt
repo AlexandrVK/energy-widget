@@ -40,6 +40,8 @@ class SettingsActivity : Activity() {
     private lateinit var gav: Spinner
     private lateinit var sgav: Spinner
     private lateinit var interval: Spinner
+    private lateinit var banner: TextView
+    private lateinit var updateBtn: Button
 
     override fun onCreate(b: Bundle?) {
         super.onCreate(b)
@@ -48,6 +50,27 @@ class SettingsActivity : Activity() {
             orientation = LinearLayout.VERTICAL
             setPadding(48, 48, 48, 48)
         }
+
+        root.addView(TextView(this).apply {
+            text = "Версия ${installedVersionName(this@SettingsActivity)}, " +
+                "сборка ${installedBuild(this@SettingsActivity)}"
+            textSize = 14f
+        })
+        banner = TextView(this).apply {
+            textSize = 14f
+            setPadding(0, 32, 0, 16)
+        }
+        root.addView(banner)
+        root.addView(Button(this).apply {
+            text = "Проверить сейчас"
+            setOnClickListener { checkNow() }
+        })
+        updateBtn = Button(this).apply {
+            text = "Обновить приложение"
+            setOnClickListener { installNow() }
+        }
+        root.addView(updateBtn)
+
         gpv = addRow(root, "ГПВ")
         gav = addRow(root, "ГАВ")
         sgav = addRow(root, "СГАВ")
@@ -62,6 +85,7 @@ class SettingsActivity : Activity() {
         })
         setContentView(ScrollView(this).apply { addView(root) })
 
+        renderUpdate()
         Thread {
             try {
                 val g = fetchQueues(TYPE_GPV)
@@ -75,6 +99,43 @@ class SettingsActivity : Activity() {
             } catch (e: Exception) {
                 runOnUiThread {
                     Toast.makeText(this, "Не удалось загрузить списки групп", Toast.LENGTH_LONG).show()
+                }
+            }
+        }.start()
+    }
+
+    private fun renderUpdate() {
+        val local = installedBuild(this)
+        val remote = prefs(this).getInt("remote_build", 0)
+        banner.text = when {
+            remote == 0 -> "Обновления ещё не проверялись"
+            remote > local -> "Доступна новая версия (сборка $remote)"
+            else -> "Установлена последняя версия"
+        }
+        updateBtn.isEnabled = remote > local
+    }
+
+    private fun checkNow() {
+        banner.text = "Проверяю…"
+        Thread {
+            val ok = checkForUpdate(this) != null
+            runOnUiThread {
+                if (!ok) Toast.makeText(this, "Не удалось проверить обновления", Toast.LENGTH_LONG).show()
+                renderUpdate()
+            }
+        }.start()
+    }
+
+    private fun installNow() {
+        val url = prefs(this).getString("remote_url", null) ?: return
+        Toast.makeText(this, "Загрузка обновления…", Toast.LENGTH_SHORT).show()
+        Thread {
+            try {
+                val uri = downloadApk(this, url)
+                runOnUiThread { startActivity(installIntent(uri)) }
+            } catch (e: Exception) {
+                runOnUiThread {
+                    Toast.makeText(this, "Не удалось загрузить обновление", Toast.LENGTH_LONG).show()
                 }
             }
         }.start()
