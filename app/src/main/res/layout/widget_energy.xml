@@ -15,9 +15,9 @@
         android:layout_height="36dp"
         android:layout_alignParentStart="true"
         android:layout_alignParentTop="true"
-        android:background="#66000000"
-        android:padding="7dp"
-        android:src="@android:drawable/ic_popup_sync" />
+        android:padding="4dp"
+        android:scaleType="fitCenter"
+        android:src="@drawable/ic_refresh_outlined" />
 
     <TextView
         android:id="@+id/updated"
@@ -25,13 +25,17 @@
         android:layout_height="36dp"
         android:layout_alignParentTop="true"
         android:layout_toEndOf="@id/refresh"
-        android:background="#66000000"
         android:gravity="center_vertical"
-        android:paddingStart="6dp"
+        android:paddingStart="2dp"
         android:paddingEnd="6dp"
+        android:shadowColor="#FF000000"
+        android:shadowDx="0"
+        android:shadowDy="0"
+        android:shadowRadius="3"
         android:text="--:--"
         android:textColor="#FFFFFF"
-        android:textSize="11sp" />
+        android:textSize="12sp"
+        android:textStyle="bold" />
 
     <ImageView
         android:id="@+id/gear"
@@ -39,7 +43,7 @@
         android:layout_height="36dp"
         android:layout_alignParentEnd="true"
         android:layout_alignParentTop="true"
-        android:background="#66000000"
-        android:padding="7dp"
-        android:src="@android:drawable/ic_menu_preferences" />
+        android:padding="4dp"
+        android:scaleType="fitCenter"
+        android:src="@drawable/ic_gear_outlined" />
 </RelativeLayout>
