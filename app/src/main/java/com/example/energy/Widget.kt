@@ -11,6 +11,8 @@ import android.graphics.Canvas
 import android.os.Bundle
 import android.widget.RemoteViews
 import androidx.work.ExistingPeriodicWorkPolicy
+import androidx.work.ExistingWorkPolicy
+import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.Worker
 import androidx.work.WorkManager
@@ -21,6 +23,7 @@ import java.util.concurrent.TimeUnit
 
 const val ACTION_REFRESH = "com.example.energy.REFRESH"
 private const val WORK_NAME = "energy_refresh"
+private const val MANUAL_WORK = "energy_manual"
 private val FLAGS = PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
 
 class EnergyWidget : AppWidgetProvider() {
@@ -39,16 +42,10 @@ class EnergyWidget : AppWidgetProvider() {
 
     override fun onReceive(ctx: Context, intent: Intent) {
         super.onReceive(ctx, intent)
+        // Загрузку делаем в WorkManager: у broadcast-обработчика короткое время работы
         if (intent.action == ACTION_REFRESH) {
-            val pending = goAsync()
-            Thread {
-                try {
-                    refreshSchedule(ctx)
-                } finally {
-                    updateAll(ctx)
-                    pending.finish()
-                }
-            }.start()
+            val req = OneTimeWorkRequestBuilder<RefreshWorker>().build()
+            WorkManager.getInstance(ctx).enqueueUniqueWork(MANUAL_WORK, ExistingWorkPolicy.REPLACE, req)
         }
     }
 }
@@ -109,7 +106,6 @@ fun renderWidget(ctx: Context, mgr: AppWidgetManager, id: Int) {
     views.setImageViewBitmap(R.id.dial, bmp)
     views.setTextViewText(R.id.updated, updatedText(ctx))
     views.setOnClickPendingIntent(R.id.dial, pendingActivity(ctx, MainActivity::class.java, 10))
-    views.setOnClickPendingIntent(R.id.gear, pendingActivity(ctx, SettingsActivity::class.java, 11))
     views.setOnClickPendingIntent(R.id.refresh, pendingRefresh(ctx))
     mgr.updateAppWidget(id, views)
 }
