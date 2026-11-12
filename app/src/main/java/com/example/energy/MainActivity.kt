@@ -127,9 +127,10 @@ class MainActivity : Activity() {
             PowerStatus.POSSIBLE -> "возможно отключение"
             PowerStatus.OUTAGE -> "отключение"
         }
+        val title = s.gpvName.ifEmpty { "ГПВ" }
         AlertDialog.Builder(this)
             .setTitle("${slotTime(first)} – ${slotTime(last + 1)}")
-            .setMessage("ГПВ ${s.gpvId}: $text")
+            .setMessage("$title: $text")
             .setPositiveButton("OK", null)
             .show()
     }
