@@ -14,10 +14,10 @@ private fun colorOf(s: PowerStatus): Int = when (s) {
 }
 
 // Циферблат size x size. 00:00 наверху, по часовой стрелке.
-// warning — текст красной полосы внизу (null — полосы нет).
+// warning — красная полоса внизу; emergency — красный квадрат с аварией в центре.
 fun drawDial(
     c: Canvas, size: Float, day: Day?, gpvId: Int, nowMs: Long,
-    badges: List<String>, warning: String? = null
+    badges: List<String>, warning: String? = null, emergency: Emergency? = null
 ) {
     val cx = size / 2f
     val cy = size / 2f
@@ -91,6 +91,33 @@ fun drawDial(
         c.drawText(text, cx, rect.centerY() - (fg.descent() + fg.ascent()) / 2f, fg)
     }
 
+    // Аварийный баннер в центре: алый квадрат поверх плашек
+    if (emergency != null) {
+        val side = r * 0.66f
+        val sq = RectF(cx - side / 2f, cy - side / 2f, cx + side / 2f, cy + side / 2f)
+        c.drawRoundRect(sq, side * 0.08f, side * 0.08f,
+            Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0xFFE02B2B.toInt() })
+        val title = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.WHITE
+            textAlign = Paint.Align.CENTER
+            textSize = side * 0.13f
+            isFakeBoldText = true
+        }
+        val body = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.WHITE
+            textAlign = Paint.Align.CENTER
+            textSize = side * 0.10f
+        }
+        val lines = listOf("АВАРИЯ", "до ${kyivTime(emergency.finishMs)}") +
+            wrap(emergency.reason, body, side * 0.86f, 4)
+        val lineH = side * 0.13f
+        var y = cy - (lines.size * lineH) / 2f + lineH * 0.8f
+        lines.forEachIndexed { i, s ->
+            c.drawText(s, cx, y, if (i < 2) title else body)
+            y += lineH
+        }
+    }
+
     // Предупреждение о нет связи с сайтом — внизу, во всю ширину
     if (warning != null) {
         val h = size * 0.08f
@@ -106,4 +133,26 @@ fun drawDial(
         if (w > maxW) t.textSize *= maxW / w
         c.drawText(warning, cx, size - h / 2f - (t.descent() + t.ascent()) / 2f, t)
     }
+}
+
+// Переносит текст по словам в maxW; при превышении числа строк последнюю обрезает
+private fun wrap(text: String, p: Paint, maxW: Float, maxLines: Int): List<String> {
+    val lines = mutableListOf<String>()
+    var cur = ""
+    for (word in text.split(" ").filter { it.isNotEmpty() }) {
+        val cand = if (cur.isEmpty()) word else "$cur $word"
+        if (p.measureText(cand) <= maxW) {
+            cur = cand
+        } else {
+            if (cur.isNotEmpty()) lines += cur
+            cur = word
+        }
+    }
+    if (cur.isNotEmpty()) lines += cur
+    if (lines.size > maxLines) {
+        val kept = lines.take(maxLines).toMutableList()
+        kept[maxLines - 1] = kept[maxLines - 1].dropLast(1) + "…"
+        return kept
+    }
+    return lines
 }

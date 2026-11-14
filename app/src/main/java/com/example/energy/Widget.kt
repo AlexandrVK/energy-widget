@@ -99,7 +99,9 @@ fun renderWidget(ctx: Context, mgr: AppWidgetManager, id: Int) {
     val bmp = Bitmap.createBitmap(px, px, Bitmap.Config.ARGB_8888)
     drawDial(
         Canvas(bmp), px.toFloat(), day, s.gpvId, now,
-        badgesFor(day, now, s), warningText(ctx)
+        badgesFor(day, now, s),
+        warning = warningText(ctx),
+        emergency = currentEmergency(ctx, now)
     )
 
     val views = RemoteViews(ctx.packageName, R.layout.widget_energy)

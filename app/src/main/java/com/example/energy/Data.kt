@@ -81,9 +81,7 @@ fun fetchQueues(type: Int): List<Queue> {
         .map { Queue(it.getInt("id"), it.getString("name")) }
 }
 
-// Есть ли сейчас сеть с выходом в интернет.
-// VALIDATED не требуем: часть сетей никогда не проходит проверку системы,
-// и тогда приложение не делало бы ни одного запроса. Если сети нет, запрос сам упадёт.
+// Есть ли сейчас сеть с выходом в интернет (VALIDATED не требуем)
 fun isOnline(ctx: Context): Boolean {
     val cm = ctx.getSystemService(ConnectivityManager::class.java) ?: return false
     val caps = cm.getNetworkCapabilities(cm.activeNetwork ?: return false) ?: return false
@@ -100,17 +98,17 @@ fun refreshWhenOnline(ctx: Context) {
 }
 
 // Несколько попыток подряд. Возвращает true, если данные получены.
-// Нет сети — не считается сбоем сайта: флаг не ставим, а обновление откладываем до появления сети.
-// При успехе сохраняет время и сбрасывает флаг сбоя. При неудаче (сеть есть, сайт не ответил) ставит флаг.
+// Аварии обновляются в том же цикле (refreshEmergency).
 fun refreshSchedule(ctx: Context, attempts: Int = 3): Boolean {
     if (!isOnline(ctx)) {
         refreshWhenOnline(ctx)
         return false
     }
+    refreshEmergency(ctx)
     repeat(attempts) { attempt ->
         try {
             val json = httpGet(API_SCHEDULE)
-            parseDays(json)                // проверка формата до сохранения
+            parseDays(json)
             prefs(ctx).edit()
                 .putString("schedule", json)
                 .putLong("fetched_at", System.currentTimeMillis())

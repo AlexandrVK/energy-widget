@@ -6,7 +6,9 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
+import android.view.View
 import android.view.ViewGroup
+import android.widget.AdapterView
 import android.widget.ArrayAdapter
 import android.widget.Button
 import android.widget.LinearLayout
@@ -48,12 +50,19 @@ fun saveSettings(ctx: Context, s: Settings) {
 class SettingsActivity : Activity() {
     private val intervals = listOf(15, 30, 60)
     private val lists = HashMap<Spinner, List<Queue>>()
+    private val named = HashMap<Spinner, List<Named>>()
     private lateinit var gpv: Spinner
     private lateinit var gav: Spinner
     private lateinit var sgav: Spinner
     private lateinit var interval: Spinner
+    private lateinit var citySp: Spinner
+    private lateinit var streetSp: Spinner
+    private lateinit var houseSp: Spinner
+    private lateinit var houseLabel: TextView
     private lateinit var banner: TextView
     private lateinit var updateBtn: Button
+    private var loadedCity = -1
+    private var loadedStreet = -1
 
     override fun onCreate(b: Bundle?) {
         super.onCreate(b)
@@ -91,6 +100,21 @@ class SettingsActivity : Activity() {
             this, android.R.layout.simple_spinner_dropdown_item, intervals.map { it.toString() }
         )
         interval.setSelection(intervals.indexOf(s.intervalMin).coerceAtLeast(0))
+
+        root.addView(TextView(this).apply {
+            text = "Дом для аварийных отключений"
+            textSize = 16f
+            setPadding(0, 40, 0, 8)
+        })
+        houseLabel = TextView(this).apply {
+            textSize = 14f
+            setPadding(0, 0, 0, 8)
+        }
+        root.addView(houseLabel)
+        citySp = addRow(root, "Населённый пункт")
+        streetSp = addRow(root, "Улица")
+        houseSp = addRow(root, "Дом")
+
         root.addView(Button(this).apply {
             text = "Сохранить"
             setOnClickListener { save() }
@@ -98,22 +122,9 @@ class SettingsActivity : Activity() {
         setContentView(ScrollView(this).apply { addView(root) })
 
         renderUpdate()
-        Thread {
-            try {
-                val g = fetchQueues(TYPE_GPV)
-                val a = fetchQueues(TYPE_GAV)
-                val sg = fetchQueues(TYPE_SGAV)
-                runOnUiThread {
-                    fill(gpv, g, s.gpvId)
-                    fill(gav, a, s.gavId)
-                    fill(sgav, sg, s.sgavId)
-                }
-            } catch (e: Exception) {
-                runOnUiThread {
-                    Toast.makeText(this, "Не удалось загрузить списки групп", Toast.LENGTH_LONG).show()
-                }
-            }
-        }.start()
+        renderHouseLabel()
+        loadScheduleLists(s)
+        loadHouseLists()
     }
 
     private fun renderUpdate() {
@@ -125,6 +136,11 @@ class SettingsActivity : Activity() {
             else -> "Установлена последняя версия"
         }
         updateBtn.isEnabled = remote > local
+    }
+
+    private fun renderHouseLabel() {
+        val label = prefs(this).getString("house_label", "") ?: ""
+        houseLabel.text = if (label.isEmpty()) "Дом не выбран" else "Текущий дом: $label"
     }
 
     private fun checkNow() {
@@ -169,6 +185,98 @@ class SettingsActivity : Activity() {
         }.start()
     }
 
+    // Списки ГПВ/ГАВ/СГАВ и выбор текущих значений
+    private fun loadScheduleLists(s: Settings) {
+        Thread {
+            try {
+                val g = fetchQueues(TYPE_GPV)
+                val a = fetchQueues(TYPE_GAV)
+                val sg = fetchQueues(TYPE_SGAV)
+                runOnUiThread {
+                    fill(gpv, g, s.gpvId)
+                    fill(gav, a, s.gavId)
+                    fill(sgav, sg, s.sgavId)
+                }
+            } catch (e: Exception) {
+                runOnUiThread { toast("Не удалось загрузить списки групп") }
+            }
+        }.start()
+    }
+
+    // Город → улицы → дом: каждый уровень грузится при выборе предыдущего
+    private fun loadHouseLists() {
+        val p = prefs(this)
+        val savedCity = p.getInt("city_id", -1)
+        val savedStreet = p.getInt("street_id", -1)
+        val savedHouse = p.getInt("house_id", -1)
+        loadedCity = savedCity
+        loadedStreet = savedStreet
+
+        onPick(citySp) { cid ->
+            if (cid >= 0 && cid != loadedCity) {
+                loadedCity = cid
+                loadStreets(cid)
+            }
+        }
+        onPick(streetSp) { sid ->
+            if (sid >= 0 && sid != loadedStreet) {
+                loadedStreet = sid
+                loadHouses(sid)
+            }
+        }
+
+        Thread {
+            try {
+                val cities = fetchCities()
+                val streets = if (savedCity >= 0) fetchStreets(savedCity) else emptyList()
+                val houses = if (savedStreet >= 0) fetchHouses(savedStreet) else emptyList()
+                runOnUiThread {
+                    fillNamed(citySp, cities, savedCity)
+                    fillNamed(streetSp, streets, savedStreet)
+                    fillNamed(houseSp, houses, savedHouse)
+                }
+            } catch (e: Exception) {
+                runOnUiThread { toast("Не удалось загрузить адреса") }
+            }
+        }.start()
+    }
+
+    private fun loadStreets(cityId: Int) {
+        Thread {
+            try {
+                val streets = fetchStreets(cityId)
+                runOnUiThread {
+                    fillNamed(houseSp, emptyList(), -1)
+                    fillNamed(streetSp, streets, -1)
+                }
+            } catch (e: Exception) {
+                runOnUiThread { toast("Не удалось загрузить улицы") }
+            }
+        }.start()
+    }
+
+    private fun loadHouses(streetId: Int) {
+        Thread {
+            try {
+                val houses = fetchHouses(streetId)
+                runOnUiThread { fillNamed(houseSp, houses, -1) }
+            } catch (e: Exception) {
+                runOnUiThread { toast("Не удалось загрузить дома") }
+            }
+        }.start()
+    }
+
+    private fun onPick(sp: Spinner, action: (Int) -> Unit) {
+        sp.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(parent: AdapterView<*>?, view: View?, pos: Int, id: Long) {
+                action(chosenNamed(sp)?.id ?: -1)
+            }
+            override fun onNothingSelected(parent: AdapterView<*>?) {}
+        }
+    }
+
+    private fun toast(msg: String) = Toast.makeText(this, msg, Toast.LENGTH_LONG).show()
+
     private fun addRow(root: LinearLayout, label: String): Spinner {
         root.addView(TextView(this).apply {
             text = label
@@ -189,11 +297,21 @@ class SettingsActivity : Activity() {
         sp.setSelection(items.indexOfFirst { it.id == selectedId }.coerceAtLeast(0))
     }
 
+    private fun fillNamed(sp: Spinner, items: List<Named>, selectedId: Int) {
+        named[sp] = items
+        sp.adapter = ArrayAdapter(
+            this, android.R.layout.simple_spinner_dropdown_item, items.map { it.name }
+        )
+        sp.setSelection(items.indexOfFirst { it.id == selectedId }.coerceAtLeast(0))
+    }
+
     private fun chosen(sp: Spinner): Queue? = lists[sp]?.getOrNull(sp.selectedItemPosition)
+
+    private fun chosenNamed(sp: Spinner): Named? = named[sp]?.getOrNull(sp.selectedItemPosition)
 
     private fun save() {
         if (lists.size < 3) {
-            Toast.makeText(this, "Подождите, списки ещё загружаются", Toast.LENGTH_SHORT).show()
+            toast("Подождите, списки ещё загружаются")
             return
         }
         val g = chosen(gpv)
@@ -204,8 +322,23 @@ class SettingsActivity : Activity() {
             sgavId = chosen(sgav)?.id ?: -1,
             intervalMin = intervals[interval.selectedItemPosition]
         ))
+
+        val city = chosenNamed(citySp)
+        val street = chosenNamed(streetSp)
+        val house = chosenNamed(houseSp)
+        prefs(this).edit()
+            .putInt("city_id", city?.id ?: -1)
+            .putInt("street_id", street?.id ?: -1)
+            .putInt("house_id", house?.id ?: -1)
+            .putString("house_label",
+                if (street != null && house != null) "${street.name}, ${house.name}" else "")
+            .apply()
+
         schedule(this)
-        updateAll(this)
+        Thread {
+            refreshEmergency(applicationContext)
+            updateAll(applicationContext)
+        }.start()
         finish()
     }
 }
