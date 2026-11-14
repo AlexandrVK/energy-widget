@@ -47,26 +47,82 @@ fun saveSettings(ctx: Context, s: Settings) {
         .apply()
 }
 
+// Общая основа экранов с выпадающими списками
+abstract class SpinnerScreen : Activity() {
+    protected val queueLists = HashMap<Spinner, List<Queue>>()
+    protected val namedLists = HashMap<Spinner, List<Named>>()
+
+    protected fun newRoot(): LinearLayout = LinearLayout(this).apply {
+        orientation = LinearLayout.VERTICAL
+        setPadding(48, 48, 48, 48)
+    }
+
+    protected fun showRoot(root: LinearLayout) {
+        setContentView(ScrollView(this).apply { addView(root) })
+    }
+
+    protected fun addLabel(root: LinearLayout, text: String, size: Float = 16f, topPad: Int = 32): TextView {
+        val tv = TextView(this).apply {
+            this.text = text
+            textSize = size
+            setPadding(0, topPad, 0, 8)
+        }
+        root.addView(tv)
+        return tv
+    }
+
+    protected fun addRow(root: LinearLayout, label: String): Spinner {
+        addLabel(root, label)
+        val sp = Spinner(this)
+        root.addView(sp, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+        return sp
+    }
+
+    protected fun toast(msg: String) {
+        Toast.makeText(this, msg, Toast.LENGTH_LONG).show()
+    }
+
+    protected fun fillQueues(sp: Spinner, items: List<Queue>, selectedId: Int) {
+        queueLists[sp] = items
+        sp.adapter = ArrayAdapter(
+            this, android.R.layout.simple_spinner_dropdown_item, items.map { it.name }
+        )
+        sp.setSelection(items.indexOfFirst { it.id == selectedId }.coerceAtLeast(0))
+    }
+
+    protected fun fillNamed(sp: Spinner, items: List<Named>, selectedId: Int) {
+        namedLists[sp] = items
+        sp.adapter = ArrayAdapter(
+            this, android.R.layout.simple_spinner_dropdown_item, items.map { it.name }
+        )
+        sp.setSelection(items.indexOfFirst { it.id == selectedId }.coerceAtLeast(0))
+    }
+
+    protected fun chosenQueue(sp: Spinner): Queue? =
+        queueLists[sp]?.getOrNull(sp.selectedItemPosition)
+
+    protected fun chosenNamed(sp: Spinner): Named? =
+        namedLists[sp]?.getOrNull(sp.selectedItemPosition)
+
+    // Вызывает action с ID выбранного пункта при каждом изменении выбора
+    protected fun onPick(sp: Spinner, action: (Int) -> Unit) {
+        sp.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(parent: AdapterView<*>?, view: View?, pos: Int, id: Long) {
+                action(chosenNamed(sp)?.id ?: -1)
+            }
+            override fun onNothingSelected(parent: AdapterView<*>?) {}
+        }
+    }
+}
+
+// Главный экран настроек: версия, обновление и переход к разделам
 class SettingsActivity : Activity() {
-    private val intervals = listOf(15, 30, 60)
-    private val lists = HashMap<Spinner, List<Queue>>()
-    private val named = HashMap<Spinner, List<Named>>()
-    private lateinit var gpv: Spinner
-    private lateinit var gav: Spinner
-    private lateinit var sgav: Spinner
-    private lateinit var interval: Spinner
-    private lateinit var citySp: Spinner
-    private lateinit var streetSp: Spinner
-    private lateinit var houseSp: Spinner
-    private lateinit var houseLabel: TextView
     private lateinit var banner: TextView
     private lateinit var updateBtn: Button
-    private var loadedCity = -1
-    private var loadedStreet = -1
 
     override fun onCreate(b: Bundle?) {
         super.onCreate(b)
-        val s = loadSettings(this)
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(48, 48, 48, 48)
@@ -92,39 +148,25 @@ class SettingsActivity : Activity() {
         }
         root.addView(updateBtn)
 
-        gpv = addRow(root, "ГПВ")
-        gav = addRow(root, "ГАВ")
-        sgav = addRow(root, "СГАВ")
-        interval = addRow(root, "Обновлять каждые, мин")
-        interval.adapter = ArrayAdapter(
-            this, android.R.layout.simple_spinner_dropdown_item, intervals.map { it.toString() }
-        )
-        interval.setSelection(intervals.indexOf(s.intervalMin).coerceAtLeast(0))
-
-        root.addView(TextView(this).apply {
-            text = "Дом для аварийных отключений"
-            textSize = 16f
-            setPadding(0, 40, 0, 8)
-        })
-        houseLabel = TextView(this).apply {
-            textSize = 14f
-            setPadding(0, 0, 0, 8)
-        }
-        root.addView(houseLabel)
-        citySp = addRow(root, "Населённый пункт")
-        streetSp = addRow(root, "Улица")
-        houseSp = addRow(root, "Дом")
-
         root.addView(Button(this).apply {
-            text = "Сохранить"
-            setOnClickListener { save() }
+            text = "Графики отключений (ГПВ, ГАВ, СГАВ)"
+            setOnClickListener { openScreen(GroupSettingsActivity::class.java) }
         })
-        setContentView(ScrollView(this).apply { addView(root) })
+        root.addView(Button(this).apply {
+            text = "Аварийные отключения (дом)"
+            setOnClickListener { openScreen(HouseSettingsActivity::class.java) }
+        })
 
+        setContentView(ScrollView(this).apply { addView(root) })
+    }
+
+    override fun onResume() {
+        super.onResume()
         renderUpdate()
-        renderHouseLabel()
-        loadScheduleLists(s)
-        loadHouseLists()
+    }
+
+    private fun openScreen(cls: Class<*>) {
+        startActivity(Intent(this, cls))
     }
 
     private fun renderUpdate() {
@@ -136,11 +178,6 @@ class SettingsActivity : Activity() {
             else -> "Установлена последняя версия"
         }
         updateBtn.isEnabled = remote > local
-    }
-
-    private fun renderHouseLabel() {
-        val label = prefs(this).getString("house_label", "") ?: ""
-        houseLabel.text = if (label.isEmpty()) "Дом не выбран" else "Текущий дом: $label"
     }
 
     private fun checkNow() {
@@ -184,23 +221,98 @@ class SettingsActivity : Activity() {
             }
         }.start()
     }
+}
 
-    // Списки ГПВ/ГАВ/СГАВ и выбор текущих значений
-    private fun loadScheduleLists(s: Settings) {
+// Экран графиков: ГПВ, ГАВ, СГАВ и периодичность обновления
+class GroupSettingsActivity : SpinnerScreen() {
+    private val intervals = listOf(15, 30, 60)
+    private lateinit var gpv: Spinner
+    private lateinit var gav: Spinner
+    private lateinit var sgav: Spinner
+    private lateinit var interval: Spinner
+
+    override fun onCreate(b: Bundle?) {
+        super.onCreate(b)
+        val s = loadSettings(this)
+        val root = newRoot()
+        gpv = addRow(root, "ГПВ")
+        gav = addRow(root, "ГАВ")
+        sgav = addRow(root, "СГАВ")
+        interval = addRow(root, "Обновлять каждые, мин")
+        interval.adapter = ArrayAdapter(
+            this, android.R.layout.simple_spinner_dropdown_item, intervals.map { it.toString() }
+        )
+        interval.setSelection(intervals.indexOf(s.intervalMin).coerceAtLeast(0))
+        root.addView(Button(this).apply {
+            text = "Сохранить"
+            setOnClickListener { save() }
+        })
+        showRoot(root)
+
         Thread {
             try {
                 val g = fetchQueues(TYPE_GPV)
                 val a = fetchQueues(TYPE_GAV)
                 val sg = fetchQueues(TYPE_SGAV)
                 runOnUiThread {
-                    fill(gpv, g, s.gpvId)
-                    fill(gav, a, s.gavId)
-                    fill(sgav, sg, s.sgavId)
+                    fillQueues(gpv, g, s.gpvId)
+                    fillQueues(gav, a, s.gavId)
+                    fillQueues(sgav, sg, s.sgavId)
                 }
             } catch (e: Exception) {
                 runOnUiThread { toast("Не удалось загрузить списки групп") }
             }
         }.start()
+    }
+
+    private fun save() {
+        if (queueLists.size < 3) {
+            toast("Подождите, списки ещё загружаются")
+            return
+        }
+        val g = chosenQueue(gpv)
+        saveSettings(this, Settings(
+            gpvId = g?.id ?: -1,
+            gpvName = g?.name ?: "",
+            gavId = chosenQueue(gav)?.id ?: -1,
+            sgavId = chosenQueue(sgav)?.id ?: -1,
+            intervalMin = intervals[interval.selectedItemPosition]
+        ))
+        schedule(this)
+        updateAll(this)
+        finish()
+    }
+}
+
+// Экран дома для аварийных отключений: населённый пункт → улица → дом
+class HouseSettingsActivity : SpinnerScreen() {
+    private lateinit var citySp: Spinner
+    private lateinit var streetSp: Spinner
+    private lateinit var houseSp: Spinner
+    private lateinit var houseLabel: TextView
+    private var loadedCity = -1
+    private var loadedStreet = -1
+
+    override fun onCreate(b: Bundle?) {
+        super.onCreate(b)
+        val root = newRoot()
+        addLabel(root, "Дом для аварийных отключений", 18f, 0)
+        houseLabel = addLabel(root, "", 14f, 8)
+        renderHouseLabel()
+        citySp = addRow(root, "Населённый пункт")
+        streetSp = addRow(root, "Улица")
+        houseSp = addRow(root, "Дом")
+        root.addView(Button(this).apply {
+            text = "Сохранить"
+            setOnClickListener { save() }
+        })
+        showRoot(root)
+        loadHouseLists()
+    }
+
+    private fun renderHouseLabel() {
+        val label = prefs(this).getString("house_label", "") ?: ""
+        houseLabel.text = if (label.isEmpty()) "Дом не выбран" else "Текущий дом: $label"
     }
 
     // Город → улицы → дом: каждый уровень грузится при выборе предыдущего
@@ -266,75 +378,20 @@ class SettingsActivity : Activity() {
         }.start()
     }
 
-    private fun onPick(sp: Spinner, action: (Int) -> Unit) {
-        sp.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
-            override fun onItemSelected(parent: AdapterView<*>?, view: View?, pos: Int, id: Long) {
-                action(chosenNamed(sp)?.id ?: -1)
-            }
-            override fun onNothingSelected(parent: AdapterView<*>?) {}
-        }
-    }
-
-    private fun toast(msg: String) = Toast.makeText(this, msg, Toast.LENGTH_LONG).show()
-
-    private fun addRow(root: LinearLayout, label: String): Spinner {
-        root.addView(TextView(this).apply {
-            text = label
-            textSize = 16f
-            setPadding(0, 32, 0, 8)
-        })
-        val sp = Spinner(this)
-        root.addView(sp, LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
-        return sp
-    }
-
-    private fun fill(sp: Spinner, items: List<Queue>, selectedId: Int) {
-        lists[sp] = items
-        sp.adapter = ArrayAdapter(
-            this, android.R.layout.simple_spinner_dropdown_item, items.map { it.name }
-        )
-        sp.setSelection(items.indexOfFirst { it.id == selectedId }.coerceAtLeast(0))
-    }
-
-    private fun fillNamed(sp: Spinner, items: List<Named>, selectedId: Int) {
-        named[sp] = items
-        sp.adapter = ArrayAdapter(
-            this, android.R.layout.simple_spinner_dropdown_item, items.map { it.name }
-        )
-        sp.setSelection(items.indexOfFirst { it.id == selectedId }.coerceAtLeast(0))
-    }
-
-    private fun chosen(sp: Spinner): Queue? = lists[sp]?.getOrNull(sp.selectedItemPosition)
-
-    private fun chosenNamed(sp: Spinner): Named? = named[sp]?.getOrNull(sp.selectedItemPosition)
-
     private fun save() {
-        if (lists.size < 3) {
-            toast("Подождите, списки ещё загружаются")
+        if (namedLists.size < 3) {
+            toast("Подождите, адреса ещё загружаются")
             return
         }
-        val g = chosen(gpv)
-        saveSettings(this, Settings(
-            gpvId = g?.id ?: -1,
-            gpvName = g?.name ?: "",
-            gavId = chosen(gav)?.id ?: -1,
-            sgavId = chosen(sgav)?.id ?: -1,
-            intervalMin = intervals[interval.selectedItemPosition]
-        ))
-
-        val city = chosenNamed(citySp)
         val street = chosenNamed(streetSp)
         val house = chosenNamed(houseSp)
         prefs(this).edit()
-            .putInt("city_id", city?.id ?: -1)
+            .putInt("city_id", chosenNamed(citySp)?.id ?: -1)
             .putInt("street_id", street?.id ?: -1)
             .putInt("house_id", house?.id ?: -1)
             .putString("house_label",
                 if (street != null && house != null) "${street.name}, ${house.name}" else "")
             .apply()
-
-        schedule(this)
         Thread {
             refreshEmergency(applicationContext)
             updateAll(applicationContext)

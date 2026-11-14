@@ -20,6 +20,8 @@
         </activity>
 
         <activity android:name=".SettingsActivity" android:exported="false" />
+        <activity android:name=".GroupSettingsActivity" android:exported="false" />
+        <activity android:name=".HouseSettingsActivity" android:exported="false" />
 
         <receiver android:name=".EnergyWidget" android:exported="true">
             <intent-filter>
