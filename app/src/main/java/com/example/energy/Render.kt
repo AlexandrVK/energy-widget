@@ -17,7 +17,8 @@ private fun colorOf(s: PowerStatus): Int = when (s) {
 // warning — красная полоса внизу; emergency — красный квадрат с аварией в центре.
 fun drawDial(
     c: Canvas, size: Float, day: Day?, gpvId: Int, nowMs: Long,
-    badges: List<String>, warning: String? = null, emergency: Emergency? = null
+    badges: List<String>, warning: String? = null, emergency: Emergency? = null,
+    info: List<String> = emptyList()
 ) {
     val cx = size / 2f
     val cy = size / 2f
@@ -70,6 +71,27 @@ fun drawDial(
         }
         val len = r * 0.62f
         c.drawLine(cx, cy, cx + len * cos(a).toFloat(), cy + len * sin(a).toFloat(), hand)
+    }
+
+    // ГПВ и ГАВ по адресу: две строки в центре, на белой подложке
+    if (info.isNotEmpty()) {
+        val inf = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = 0xFF212121.toInt()
+            textAlign = Paint.Align.CENTER
+            textSize = r * 0.10f
+            isFakeBoldText = true
+        }
+        val lineH = r * 0.12f
+        val boxW = info.maxOf { inf.measureText(it) } + r * 0.12f
+        val boxH = info.size * lineH + r * 0.06f
+        val plate = RectF(cx - boxW / 2f, cy - boxH / 2f, cx + boxW / 2f, cy + boxH / 2f)
+        c.drawRoundRect(plate, r * 0.05f, r * 0.05f,
+            Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.WHITE })
+        var y = cy - (info.size * lineH) / 2f + lineH * 0.8f
+        info.forEach { line ->
+            c.drawText(line, cx, y, inf)
+            y += lineH
+        }
     }
 
     // Плашки ГАВ / СГАВ поверх циферблата
