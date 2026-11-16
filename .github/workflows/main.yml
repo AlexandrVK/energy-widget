@@ -23,11 +23,25 @@ jobs:
         with:
           gradle-version: '8.7'
 
-      - name: Build debug APK
-        run: gradle assembleDebug --stacktrace
+      - name: Restore signing key
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+        run: |
+          if [ -z "$KEYSTORE_BASE64" ]; then
+            echo "::error::Secret KEYSTORE_BASE64 is not set"
+            exit 1
+          fi
+          echo "$KEYSTORE_BASE64" | base64 -d > app/release.jks
+
+      - name: Build release APK
+        env:
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: gradle assembleRelease --stacktrace
 
       - name: Rename APK
-        run: cp app/build/outputs/apk/debug/app-debug.apk energy-widget.apk
+        run: cp app/build/outputs/apk/release/app-release.apk energy-widget.apk
 
       - uses: actions/upload-artifact@v4
         with:
@@ -41,5 +55,5 @@ jobs:
           gh release delete latest --cleanup-tag -y || true
           gh release create latest energy-widget.apk \
             --title "build ${{ github.run_number }}" \
-            --notes "Автосборка из коммита ${{ github.sha }}" \
+            --notes "РђРІС‚РѕСЃР±РѕСЂРєР° РёР· РєРѕРјРјРёС‚Р° ${{ github.sha }}" \
             --target ${{ github.sha }}
