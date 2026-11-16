@@ -18,6 +18,7 @@ import kotlin.math.sqrt
 // Полноэкранный циферблат: тап по зоне показывает отрезок того же статуса
 class DialView(ctx: Context) : View(ctx) {
     var day: Day? = null
+    var mode12 = false
     var gpvId = -1
     var badges: List<String> = emptyList()
     var onSlot: ((Int) -> Unit)? = null
@@ -25,7 +26,7 @@ class DialView(ctx: Context) : View(ctx) {
     override fun onDraw(c: Canvas) {
         val s = minOf(width, height).toFloat()
         c.translate((width - s) / 2f, (height - s) / 2f)
-        drawDial(c, s, day, gpvId, System.currentTimeMillis(), badges)
+        drawDial(c, s, day, gpvId, System.currentTimeMillis(), badges, mode12 = mode12)
     }
 
     override fun onTouchEvent(e: MotionEvent): Boolean {
@@ -33,9 +34,17 @@ class DialView(ctx: Context) : View(ctx) {
             val s = minOf(width, height).toFloat()
             val dx = e.x - width / 2f
             val dy = e.y - height / 2f
-            if (sqrt(dx * dx + dy * dy) <= s / 2f) {
-                var deg = Math.toDegrees(atan2(dx.toDouble(), -dy.toDouble())).toFloat()
-                if (deg < 0f) deg += 360f
+            val dist = sqrt(dx * dx + dy * dy)
+            val rr = s / 2f * 0.96f
+            var deg = Math.toDegrees(atan2(dx.toDouble(), -dy.toDouble())).toFloat()
+            if (deg < 0f) deg += 360f
+            if (mode12) {
+                // 12 часов: внешнее кольцо 12–24, внутреннее 0–12
+                if (dist >= 0.27f * rr && dist <= 0.74f * rr) {
+                    val k = (deg / 15f).toInt().coerceIn(0, 23)
+                    onSlot?.invoke(if (dist >= 0.52f * rr) 24 + k else k)
+                }
+            } else if (dist <= s / 2f) {
                 onSlot?.invoke((deg / 7.5f).toInt().coerceIn(0, SLOTS - 1))
             }
             performClick()
@@ -90,6 +99,7 @@ class MainActivity : Activity() {
         dial.day = day
         dial.gpvId = s.gpvId
         dial.badges = badgesFor(day, now, s)
+        dial.mode12 = is12h(this)
         dial.invalidate()
         hint.text = when {
             day == null -> "Нет данных на сегодня. Нажмите «Обновить»."

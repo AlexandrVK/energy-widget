@@ -69,7 +69,7 @@ fun badgesFor(day: Day?, nowMs: Long, s: Settings): List<String> {
 // Строки в центре циферблата: ГПВ и ГАВ по адресу
 fun infoLines(ctx: Context): List<String> {
     val p = prefs(ctx)
-    if (p.getInt("house_id", -1) < 0) return listOf("Адрес не выбран")
+    if (p.getInt("house_id", -1) < 0) return listOf("Адрес", "не выбран")
     val gpv = (p.getString("gpv_name", "") ?: "").ifEmpty { "—" }
     val gav = (p.getString("gav_name", "") ?: "").ifEmpty { "—" }
     return listOf("ГПВ $gpv", "ГАВ $gav")
@@ -111,7 +111,8 @@ fun renderWidget(ctx: Context, mgr: AppWidgetManager, id: Int) {
         badgesFor(day, now, s),
         warning = warningText(ctx),
         emergency = currentEmergency(ctx, now),
-        info = infoLines(ctx)
+        info = infoLines(ctx),
+        mode12 = is12h(ctx)
     )
 
     val views = RemoteViews(ctx.packageName, R.layout.widget_energy)

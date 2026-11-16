@@ -25,6 +25,9 @@ class Settings(
     val intervalMin: Int
 )
 
+// Вид шкалы: false — 24 часа, true — 12 часов
+fun is12h(ctx: Context): Boolean = prefs(ctx).getBoolean("mode12", false)
+
 fun loadSettings(ctx: Context): Settings {
     val p = prefs(ctx)
     return Settings(
@@ -48,6 +51,7 @@ class SettingsActivity : Activity() {
     private lateinit var checkBtn: Button
     private lateinit var updateBtn: Button
     private lateinit var intervalSp: Spinner
+    private lateinit var modeSp: Spinner
     private lateinit var citySearch: AutoCompleteTextView
     private lateinit var streetSearch: AutoCompleteTextView
     private lateinit var houseSearch: AutoCompleteTextView
@@ -88,6 +92,18 @@ class SettingsActivity : Activity() {
         )
         intervalSp.setSelection(intervals.indexOf(s.intervalMin).coerceAtLeast(0))
         intRow.addView(intervalSp, weightedBy(1f))
+
+        val modeRow = row(root)
+        modeRow.addView(TextView(this).apply {
+            text = "Шкала"
+            textSize = 14f
+        }, weightedBy(1f))
+        modeSp = Spinner(this)
+        modeSp.adapter = ArrayAdapter(
+            this, android.R.layout.simple_spinner_dropdown_item, listOf("24 часа", "12 часов")
+        )
+        modeSp.setSelection(if (is12h(this)) 1 else 0)
+        modeRow.addView(modeSp, weightedBy(1f))
 
         citySearch = search("Населённый пункт")
         root.addView(citySearch, matchWrap())
@@ -303,6 +319,7 @@ class SettingsActivity : Activity() {
 
     private fun save() {
         val p = prefs(this)
+        p.edit().putBoolean("mode12", modeSp.selectedItemPosition == 1).apply()
         val street = chosen(streetSearch)
         val house = chosen(houseSearch)
         val intervalMin = intervals[intervalSp.selectedItemPosition]
